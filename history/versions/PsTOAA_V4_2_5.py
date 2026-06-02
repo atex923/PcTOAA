@@ -1,12 +1,12 @@
-# PsTOAA_V4_2_2.py
-# 預算書分析系統 QT V4.2.2
+# PsTOAA_V4_2_5.py
+# 預算書分析系統 QT V4.2.5
 #
 # 支援 PySide6 / PyQt6。
 #
 # 主要功能：
 # - 讀取預算總表、預算詳細表、預算單價分析表。
 # - 產生組合總表與輸出總表，支援刪除單複價、計算工項複價、重新計算、整理備註。
-# - 支援手動編輯同步、編輯紀錄儲存/載入、回復一次、匯入回饋 Excel、匯出 XLS/XLSM。
+# - 支援手動編輯同步、編輯紀錄儲存/載入、回復一次、匯入回饋 Excel、匯出 XLSM。
 # - 右上金額區顯示工程費、稅費、工程管理費、公共藝術費等動態金額。
 # - 表格工具包含目前分頁搜尋、欄寬調整、項目名稱/備註字數檢查。
 #
@@ -23,6 +23,9 @@
 # - V4.2.1：整合單價分析略過規則、搜尋與字數檢查、項目 0 總工程經費列、
 #            右上金額區項目代碼/06 工程管理費/0A3 公共藝術費試算，以及相關版面調整。
 # - V4.2.2：匯出預設檔名改為 AA3118_ 加上西元年月日時分秒。
+# - V4.2.3：修正長檔名欄位遮蔽、06 工程管理費試算基礎、隱藏階層前間距。
+# - V4.2.4：工程管理費試算值顯示到小數後三位。
+# - V4.2.5：上半部新增粉藍功能區，重排操作按鈕並新增往後回復編輯。
 
 import sys
 import re
@@ -104,9 +107,9 @@ except Exception:
 
 
 CODES = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-APP_VERSION = "V4.2.2"
+APP_VERSION = "V4.2.5"
 APP_TITLE = f"預算書分析系統 QT {APP_VERSION}"
-DEFAULT_LOG_FILENAME = "BudgetAnalyzer_V4_2_2.budget_log.json"
+DEFAULT_LOG_FILENAME = "BudgetAnalyzer_V4_2_5.budget_log.json"
 
 COLUMNS = (
     "檔別", "動支單號", "項目", "項目名稱", "來源編號", "來源名稱",
@@ -179,6 +182,7 @@ class BudgetAnalyzerQT(QMainWindow):
         self.is_loading_table = False
         self.is_internal_change = False
         self.edit_history = []
+        self.redo_history = []
         self.max_history = 10
 
         self.build_ui()
@@ -287,6 +291,18 @@ class BudgetAnalyzerQT(QMainWindow):
         left_layout.setSpacing(3)
         top_layout.addWidget(left_panel, stretch=1)
 
+        function_panel = QWidget()
+        function_panel.setFixedWidth(360)
+        function_panel.setStyleSheet(
+            "background-color: #DDEBF7; "
+            "border: 1px solid #9EADCC; "
+            "border-radius: 6px;"
+        )
+        function_layout = QVBoxLayout(function_panel)
+        function_layout.setContentsMargins(8, 6, 8, 6)
+        function_layout.setSpacing(4)
+        top_layout.addWidget(function_panel, stretch=0)
+
         def compact_button(text, slot, min_width=88):
             button = QPushButton(text)
             button.clicked.connect(slot)
@@ -309,7 +325,8 @@ class BudgetAnalyzerQT(QMainWindow):
         self.hide_level_edit = QLineEdit()
         self.search_edit = QLineEdit()
 
-        self.file_edit.setMinimumWidth(420)
+        self.file_edit.setMinimumWidth(260)
+        self.file_edit.setMaximumWidth(520)
         self.project_name_edit.setMinimumWidth(360)
         self.project_no_edit.setFixedWidth(145)
         self.file_type_edit.setFixedWidth(80)
@@ -337,11 +354,6 @@ class BudgetAnalyzerQT(QMainWindow):
         file_row.addWidget(compact_button("瀏覽", self.browse_file, 64))
         file_row.addWidget(compact_button("分析", self.analyze, 64))
         file_row.addWidget(compact_button("自動欄寬", self.auto_resize_all, 86))
-        file_row.addSpacing(8)
-        file_row.addWidget(small_label("搜尋"))
-        file_row.addWidget(self.search_edit)
-        file_row.addWidget(compact_button("下一筆", self.search_current_table, 64))
-        file_row.addWidget(compact_button("清除", self.clear_search, 58))
         left_layout.addLayout(file_row)
 
         # -----------------------------------------------------
@@ -370,9 +382,6 @@ class BudgetAnalyzerQT(QMainWindow):
         self.edit_check = QCheckBox("啟用資料編輯")
         self.edit_check.toggled.connect(self.update_editable_state)
         self.manual_width_check = QCheckBox("手動調整欄寬")
-        fixed_row.addSpacing(8)
-        fixed_row.addWidget(self.edit_check)
-        fixed_row.addWidget(self.manual_width_check)
         fixed_row.addStretch(1)
         left_layout.addLayout(fixed_row)
 
@@ -385,13 +394,6 @@ class BudgetAnalyzerQT(QMainWindow):
         analysis_row.addWidget(compact_button("刪除單複價", self.apply_delete_rules, 92))
         analysis_row.addWidget(compact_button("計算工項複價", self.calculate_leaf_amounts, 104))
         analysis_row.addWidget(compact_button("重新計算", self.calculate_rollup_amounts, 86))
-        analysis_row.addWidget(small_label("隱藏階層"))
-        analysis_row.addWidget(self.hide_level_edit)
-        analysis_row.addWidget(compact_button("隱藏", self.hide_combined_below_level, 58))
-        analysis_row.addWidget(compact_button("恢復", self.show_all_combined, 58))
-        analysis_row.addSpacing(12)
-        analysis_row.addWidget(compact_button("整理備註", self.clean_combined_remarks, 82))
-        analysis_row.addWidget(compact_button("檢查字數", self.check_text_lengths, 82))
         analysis_row.addStretch(1)
         left_layout.addLayout(analysis_row)
 
@@ -402,14 +404,46 @@ class BudgetAnalyzerQT(QMainWindow):
         io_row.setSpacing(4)
         io_row.addWidget(small_label("輸出總表"))
         io_row.addWidget(compact_button("填入欄位", self.fill_final_fixed_fields, 82))
-        io_row.addWidget(compact_button("儲存編輯", self.save_edit_log_manual, 82))
-        io_row.addWidget(compact_button("載入編輯", self.load_edit_log_manual, 82))
-        io_row.addWidget(compact_button("回復一次", self.undo_last_edit, 82))
-        io_row.addWidget(compact_button("匯出 XLS", self.export_final_xls, 82))
-        io_row.addWidget(compact_button("匯出 XLSM", self.export_final_xlsm, 88))
-        io_row.addWidget(compact_button("匯入回饋", self.import_feedback_excel, 82))
         io_row.addStretch(1)
         left_layout.addLayout(io_row)
+
+        def add_function_row(*widgets):
+            row = QHBoxLayout()
+            row.setSpacing(4)
+            for widget in widgets:
+                row.addWidget(widget)
+            row.addStretch(1)
+            function_layout.addLayout(row)
+
+        add_function_row(
+            small_label("搜尋"),
+            self.search_edit,
+            compact_button("下一筆", self.search_current_table, 64),
+            compact_button("清除", self.clear_search, 58),
+        )
+        add_function_row(
+            small_label("隱藏階層"),
+            self.hide_level_edit,
+            compact_button("隱藏", self.hide_combined_below_level, 58),
+            compact_button("恢復", self.show_all_combined, 58),
+        )
+        add_function_row(self.edit_check, self.manual_width_check)
+        add_function_row(
+            compact_button("整理備註", self.clean_combined_remarks, 82),
+            compact_button("檢查字數", self.check_text_lengths, 82),
+        )
+        add_function_row(
+            compact_button("儲存編輯", self.save_edit_log_manual, 82),
+            compact_button("載入編輯", self.load_edit_log_manual, 82),
+        )
+        add_function_row(
+            compact_button("匯出 XLSM", self.export_final_xlsm, 88),
+            compact_button("匯入回饋", self.import_feedback_excel, 82),
+        )
+        add_function_row(
+            compact_button("往前回復編輯", self.undo_last_edit, 104),
+            compact_button("往後回復編輯", self.redo_last_edit, 104),
+        )
 
         # -----------------------------------------------------
         # 右側：動態金額資訊區
@@ -887,7 +921,7 @@ class BudgetAnalyzerQT(QMainWindow):
     def update_dynamic_amount_labels(self):
         """
         更新右上金額區。
-        左欄多取組合總表複價；試算欄依 01 或 01+02 的規則計算。
+        左欄多取組合總表複價；試算欄依各項目規則計算。
         """
         required_labels = (
             "amount_01_value_label",
@@ -916,8 +950,8 @@ class BudgetAnalyzerQT(QMainWindow):
         }
         amount_0a3_summary = self.num(self.get_summary_amount_by_item("0A3")) or 0.0
         base_01 = amounts["01"]
-        management_base = amounts["01"] + amounts["02"]
-        management_fee = round(self.calculate_management_fee(management_base))
+        management_base = amounts["011"] + sum(amounts[code] for code in ("02", "03", "04", "05"))
+        management_fee = self.calculate_management_fee(management_base)
 
         label_values = (
             (self.amount_01_value_label, amounts["01"]),
@@ -939,7 +973,7 @@ class BudgetAnalyzerQT(QMainWindow):
         for label, value in label_values:
             label.setText(f"{value:,.3f}")
 
-        self.amount_management_calc_value_label.setText(f"{management_fee:,.0f}")
+        self.amount_management_calc_value_label.setText(f"{management_fee:,.3f}")
 
     def table_object_by_name(self, name):
         for table_name, _, table in self.table_configs():
@@ -1080,7 +1114,7 @@ class BudgetAnalyzerQT(QMainWindow):
 
 
     # =========================================================
-    # V4.2.2 儲存 / 載入 / 編輯歷史
+    # V4.2.5 儲存 / 載入 / 編輯歷史
     # =========================================================
     def log_path_for_current_file(self):
         """
@@ -1182,6 +1216,7 @@ class BudgetAnalyzerQT(QMainWindow):
 
     def push_edit_history(self):
         self.edit_history.append(self.make_history_snapshot())
+        self.redo_history = []
 
         if len(self.edit_history) > self.max_history:
             self.edit_history = self.edit_history[-self.max_history:]
@@ -1196,6 +1231,7 @@ class BudgetAnalyzerQT(QMainWindow):
                 "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "state": state,
                 "history": self.edit_history[-self.max_history:],
+                "redo_history": self.redo_history[-self.max_history:],
             }
 
             log_path.write_text(
@@ -1222,6 +1258,7 @@ class BudgetAnalyzerQT(QMainWindow):
         payload = json.loads(Path(log_path).read_text(encoding="utf-8"))
         state = payload.get("state", payload)
         self.edit_history = payload.get("history", [])[-self.max_history:]
+        self.redo_history = payload.get("redo_history", [])[-self.max_history:]
         self.apply_state(state)
 
     def load_edit_log_manual(self):
@@ -1269,9 +1306,32 @@ class BudgetAnalyzerQT(QMainWindow):
 
         try:
             state = self.edit_history.pop()
+            self.redo_history.append(self.make_history_snapshot())
+
+            if len(self.redo_history) > self.max_history:
+                self.redo_history = self.redo_history[-self.max_history:]
+
             self.apply_state(state)
             self.save_edit_log(show_message=False)
             self.msg_info("完成", f"已回復上一次編輯。\n剩餘可回復次數：{len(self.edit_history)}")
+        except Exception:
+            self.msg_error("錯誤", traceback.format_exc())
+
+    def redo_last_edit(self):
+        if not self.redo_history:
+            self.msg_warn("提醒", "目前沒有可往後回復的編輯歷史。")
+            return
+
+        try:
+            state = self.redo_history.pop()
+            self.edit_history.append(self.make_history_snapshot())
+
+            if len(self.edit_history) > self.max_history:
+                self.edit_history = self.edit_history[-self.max_history:]
+
+            self.apply_state(state)
+            self.save_edit_log(show_message=False)
+            self.msg_info("完成", f"已往後回復一次。\n剩餘可往後回復次數：{len(self.redo_history)}")
         except Exception:
             self.msg_error("錯誤", traceback.format_exc())
 
@@ -1289,6 +1349,8 @@ class BudgetAnalyzerQT(QMainWindow):
         )
         if path:
             self.file_edit.setText(path)
+            self.file_edit.setToolTip(path)
+            self.file_edit.setCursorPosition(len(path))
             self.ask_load_existing_log()
 
     def analyze(self):
@@ -1320,6 +1382,7 @@ class BudgetAnalyzerQT(QMainWindow):
             )
 
             self.edit_history = []
+            self.redo_history = []
             self.save_edit_log(show_message=False)
 
             if warnings:
@@ -2112,66 +2175,6 @@ class BudgetAnalyzerQT(QMainWindow):
     def default_export_filename(self, extension):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         return str(Path.cwd() / f"AA3118_{timestamp}.{extension}")
-
-    def export_final_xls(self):
-        rows = self.get_final_export_rows()
-
-        if not rows:
-            self.msg_warn("提醒", "輸出總表沒有資料可匯出。")
-            return
-
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "匯出 XLS", self.default_export_filename("xls"), "Excel 97-2003 (*.xls)"
-        )
-
-        if not filename:
-            return
-
-        if not filename.lower().endswith(".xls"):
-            filename += ".xls"
-
-        try:
-            def html_escape(value):
-                value = "" if value is None else str(value)
-                return (
-                    value.replace("&", "&amp;")
-                         .replace("<", "&lt;")
-                         .replace(">", "&gt;")
-                         .replace('"', "&quot;")
-                )
-
-            output = []
-            output.append('<html lang="zh-Hant-TW">')
-            output.append('<head>')
-            output.append('<meta charset="utf-8">')
-            output.append('<meta http-equiv="Content-Type" content="text/html; charset=utf-8">')
-            output.append('<meta name="ProgId" content="Excel.Sheet">')
-            output.append('<style>')
-            output.append('td, th { mso-number-format:"\\@"; white-space:nowrap; }')
-            output.append('</style>')
-            output.append('</head>')
-            output.append('<body>')
-            output.append('<table border="1">')
-            output.append('<tr>')
-
-            for col in COLUMNS:
-                output.append(f'<th style="mso-number-format:\\@">{html_escape(col)}</th>')
-
-            output.append('</tr>')
-
-            for row in rows:
-                output.append('<tr>')
-                for col in COLUMNS:
-                    output.append(f'<td style="mso-number-format:\\@">{html_escape(row.get(col, ""))}</td>')
-                output.append('</tr>')
-
-            output.append('</table></body></html>')
-
-            Path(filename).write_text("\n".join(output), encoding="utf-8-sig")
-            self.msg_info("完成", f"XLS 匯出完成：\n{filename}")
-
-        except Exception:
-            self.msg_error("錯誤", traceback.format_exc())
 
     def export_final_xlsm(self):
         rows = self.get_final_export_rows()
