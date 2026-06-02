@@ -3,4 +3,6 @@ __pycache__/
 *.pyo
 *.pyd
 *.budget_log.json
+AA3118_*.xlsm
+AA3118_*.xls
 .DS_Store
