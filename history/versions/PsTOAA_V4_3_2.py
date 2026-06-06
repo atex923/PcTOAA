@@ -1,12 +1,12 @@
-# PsTOAA_V4_2_3.py
-# 預算書分析系統 QT V4.2.3
+# PsTOAA_V4_3_2.py
+# 預算書分析系統 QT V4.3.2
 #
 # 支援 PySide6 / PyQt6。
 #
 # 主要功能：
 # - 讀取預算總表、預算詳細表、預算單價分析表。
 # - 產生組合總表與輸出總表，支援刪除單複價、計算工項複價、重新計算、整理備註。
-# - 支援手動編輯同步、編輯紀錄儲存/載入、回復一次、匯入回饋 Excel、匯出 XLS/XLSM。
+# - 支援手動編輯同步、編輯紀錄儲存/載入、回復一次、匯入回饋 Excel、匯出 XLSM。
 # - 右上金額區顯示工程費、稅費、工程管理費、公共藝術費等動態金額。
 # - 表格工具包含目前分頁搜尋、欄寬調整、項目名稱/備註字數檢查。
 #
@@ -20,10 +20,13 @@
 # - V3.6.1：加入內部更新鎖與表格訊號暫停，避免切換編輯狀態時觸發事件風暴。
 # - V4.0.C1：新增編輯紀錄、手動儲存/載入、回復一次、右上動態金額區。
 # - V4.1.x：精簡解析/表格共用邏輯，調整分頁與功能按鈕名稱。
-# - V4.2.1：整合單價分析略過規則、搜尋與字數檢查、項目 0 總工程經費列、
-#            右上金額區項目代碼/06 工程管理費/0A3 公共藝術費試算，以及相關版面調整。
-# - V4.2.2：匯出預設檔名改為 AA3118_ 加上西元年月日時分秒。
-# - V4.2.3：修正長檔名欄位遮蔽、06 工程管理費試算基礎、隱藏階層前間距。
+# - V4.2.x：整合單價分析略過規則、搜尋與字數檢查、項目 0 總工程經費列、
+#            右上金額區項目代碼/06 工程管理費/0A3 公共藝術費試算、
+#            匯出檔名規則、長檔名顯示修正、工程管理費顯示精度、
+#            上半部功能區重排、往後回復編輯、移除匯出 XLS，以及按鈕立體樣式。
+# - V4.3.0：視窗最底部新增標語。
+# - V4.3.1：組合總表數量顯示三位小數，重新計算時同步右上試算值到對應工項。
+# - V4.3.2：右上金額區分原始/重新計算欄，分析前確認是否清除既有資料。
 
 import sys
 import re
@@ -105,9 +108,9 @@ except Exception:
 
 
 CODES = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-APP_VERSION = "V4.2.3"
+APP_VERSION = "V4.3.2"
 APP_TITLE = f"預算書分析系統 QT {APP_VERSION}"
-DEFAULT_LOG_FILENAME = "BudgetAnalyzer_V4_2_3.budget_log.json"
+DEFAULT_LOG_FILENAME = "BudgetAnalyzer_V4_3_2.budget_log.json"
 
 COLUMNS = (
     "檔別", "動支單號", "項目", "項目名稱", "來源編號", "來源名稱",
@@ -173,6 +176,8 @@ class BudgetAnalyzerQT(QMainWindow):
         self.unit_price_data = []
         self.combined_data = []
         self.final_data = []
+        self.original_amounts = {}
+        self.recalculated_amounts = {}
 
         self.color_marks = {}  # (row, col_name) -> QColor，組合總表計算/刪除顏色
         self.edited_cell_marks = {}  # (table_name, row, col_name) -> QColor，手動修改紫色
@@ -180,6 +185,7 @@ class BudgetAnalyzerQT(QMainWindow):
         self.is_loading_table = False
         self.is_internal_change = False
         self.edit_history = []
+        self.redo_history = []
         self.max_history = 10
 
         self.build_ui()
@@ -279,7 +285,7 @@ class BudgetAnalyzerQT(QMainWindow):
         top = QWidget()
         top_layout = QHBoxLayout(top)
         top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(8)
+        top_layout.setSpacing(16)
         main_layout.addWidget(top)
 
         left_panel = QWidget()
@@ -288,13 +294,45 @@ class BudgetAnalyzerQT(QMainWindow):
         left_layout.setSpacing(3)
         top_layout.addWidget(left_panel, stretch=1)
 
+        function_panel = QWidget()
+        function_panel.setFixedWidth(360)
+        function_panel.setStyleSheet(
+            "background-color: #DDEBF7; "
+            "border: 1px solid #9EADCC; "
+            "border-radius: 6px;"
+        )
+        function_layout = QVBoxLayout(function_panel)
+        function_layout.setContentsMargins(10, 7, 10, 7)
+        function_layout.setSpacing(5)
+        top_layout.addWidget(function_panel, stretch=0)
+
         def compact_button(text, slot, min_width=88):
             button = QPushButton(text)
             button.clicked.connect(slot)
             button.setMinimumWidth(min_width)
             button.setFixedHeight(30)
-            button.setStyleSheet("padding: 2px 8px;")
+            button.setStyleSheet(
+                "QPushButton {"
+                "background-color: #F8FBFF; "
+                "border: 1px solid #6F86A6; "
+                "border-top-color: #FFFFFF; "
+                "border-left-color: #FFFFFF; "
+                "border-radius: 4px; "
+                "padding: 2px 8px;"
+                "}"
+                "QPushButton:hover { background-color: #FFFFFF; }"
+                "QPushButton:pressed {"
+                "background-color: #C9DAF8; "
+                "border-top-color: #6F86A6; "
+                "border-left-color: #6F86A6; "
+                "border-bottom-color: #FFFFFF; "
+                "border-right-color: #FFFFFF;"
+                "}"
+            )
             return button
+
+        def function_button(text, slot, min_width=88):
+            return compact_button(text, slot, min_width)
 
         def small_label(text):
             label = QLabel(text)
@@ -318,8 +356,10 @@ class BudgetAnalyzerQT(QMainWindow):
         self.payment_no_edit.setFixedWidth(135)
         self.unit_check_edit.setFixedWidth(75)
         self.hide_level_edit.setFixedWidth(52)
+        self.hide_level_edit.setStyleSheet("background-color: white;")
         self.search_edit.setFixedWidth(150)
         self.search_edit.setPlaceholderText("目前分頁搜尋")
+        self.search_edit.setStyleSheet("background-color: white;")
         self.search_edit.returnPressed.connect(self.search_current_table)
 
         for edit in (
@@ -339,11 +379,6 @@ class BudgetAnalyzerQT(QMainWindow):
         file_row.addWidget(compact_button("瀏覽", self.browse_file, 64))
         file_row.addWidget(compact_button("分析", self.analyze, 64))
         file_row.addWidget(compact_button("自動欄寬", self.auto_resize_all, 86))
-        file_row.addSpacing(8)
-        file_row.addWidget(small_label("搜尋"))
-        file_row.addWidget(self.search_edit)
-        file_row.addWidget(compact_button("下一筆", self.search_current_table, 64))
-        file_row.addWidget(compact_button("清除", self.clear_search, 58))
         left_layout.addLayout(file_row)
 
         # -----------------------------------------------------
@@ -372,9 +407,6 @@ class BudgetAnalyzerQT(QMainWindow):
         self.edit_check = QCheckBox("啟用資料編輯")
         self.edit_check.toggled.connect(self.update_editable_state)
         self.manual_width_check = QCheckBox("手動調整欄寬")
-        fixed_row.addSpacing(8)
-        fixed_row.addWidget(self.edit_check)
-        fixed_row.addWidget(self.manual_width_check)
         fixed_row.addStretch(1)
         left_layout.addLayout(fixed_row)
 
@@ -387,14 +419,6 @@ class BudgetAnalyzerQT(QMainWindow):
         analysis_row.addWidget(compact_button("刪除單複價", self.apply_delete_rules, 92))
         analysis_row.addWidget(compact_button("計算工項複價", self.calculate_leaf_amounts, 104))
         analysis_row.addWidget(compact_button("重新計算", self.calculate_rollup_amounts, 86))
-        analysis_row.addSpacing(12)
-        analysis_row.addWidget(small_label("隱藏階層"))
-        analysis_row.addWidget(self.hide_level_edit)
-        analysis_row.addWidget(compact_button("隱藏", self.hide_combined_below_level, 58))
-        analysis_row.addWidget(compact_button("恢復", self.show_all_combined, 58))
-        analysis_row.addSpacing(12)
-        analysis_row.addWidget(compact_button("整理備註", self.clean_combined_remarks, 82))
-        analysis_row.addWidget(compact_button("檢查字數", self.check_text_lengths, 82))
         analysis_row.addStretch(1)
         left_layout.addLayout(analysis_row)
 
@@ -405,14 +429,46 @@ class BudgetAnalyzerQT(QMainWindow):
         io_row.setSpacing(4)
         io_row.addWidget(small_label("輸出總表"))
         io_row.addWidget(compact_button("填入欄位", self.fill_final_fixed_fields, 82))
-        io_row.addWidget(compact_button("儲存編輯", self.save_edit_log_manual, 82))
-        io_row.addWidget(compact_button("載入編輯", self.load_edit_log_manual, 82))
-        io_row.addWidget(compact_button("回復一次", self.undo_last_edit, 82))
-        io_row.addWidget(compact_button("匯出 XLS", self.export_final_xls, 82))
-        io_row.addWidget(compact_button("匯出 XLSM", self.export_final_xlsm, 88))
-        io_row.addWidget(compact_button("匯入回饋", self.import_feedback_excel, 82))
         io_row.addStretch(1)
         left_layout.addLayout(io_row)
+
+        def add_function_row(*widgets):
+            row = QHBoxLayout()
+            row.setSpacing(4)
+            for widget in widgets:
+                row.addWidget(widget)
+            row.addStretch(1)
+            function_layout.addLayout(row)
+
+        add_function_row(
+            small_label("搜尋"),
+            self.search_edit,
+            function_button("下一筆", self.search_current_table, 64),
+            function_button("清除", self.clear_search, 58),
+        )
+        add_function_row(
+            small_label("隱藏階層"),
+            self.hide_level_edit,
+            function_button("隱藏", self.hide_combined_below_level, 58),
+            function_button("恢復", self.show_all_combined, 58),
+        )
+        add_function_row(self.edit_check, self.manual_width_check)
+        add_function_row(
+            function_button("整理備註", self.clean_combined_remarks, 82),
+            function_button("檢查字數", self.check_text_lengths, 82),
+        )
+        add_function_row(
+            function_button("儲存編輯", self.save_edit_log_manual, 82),
+            function_button("載入編輯", self.load_edit_log_manual, 82),
+        )
+        add_function_row(
+            function_button("匯出 XLSM", self.export_final_xlsm, 88),
+            function_button("匯入回饋", self.import_feedback_excel, 82),
+        )
+        add_function_row(
+            function_button("往前回復編輯", self.undo_last_edit, 104),
+            function_button("往後回復編輯", self.redo_last_edit, 104),
+        )
 
         # -----------------------------------------------------
         # 右側：動態金額資訊區
@@ -450,6 +506,9 @@ class BudgetAnalyzerQT(QMainWindow):
         self.amount_management_calc_name_label = QLabel("級距試算")
         self.amount_qc_calc_name_label = QLabel("01×0.1%")
         self.amount_art_calc_name_label = QLabel("01X1.0%")
+        self.amount_01_calc_name_label = QLabel("重新計算")
+        self.amount_011_calc_name_label = QLabel("重新計算")
+        self.amount_total_calc_name_label = QLabel("重新計算")
 
         self.amount_01_value_label = QLabel("0.000")
         self.amount_011_value_label = QLabel("0.000")
@@ -466,6 +525,9 @@ class BudgetAnalyzerQT(QMainWindow):
         self.amount_art_summary_value_label = QLabel("0.000")
         self.amount_art_combined_value_label = QLabel("0.000")
         self.amount_total_value_label = QLabel("0.000")
+        self.amount_01_calc_value_label = QLabel("0.000")
+        self.amount_011_calc_value_label = QLabel("0.000")
+        self.amount_total_calc_value_label = QLabel("0.000")
 
         name_labels = [
             self.amount_01_name_label,
@@ -479,12 +541,15 @@ class BudgetAnalyzerQT(QMainWindow):
             self.amount_total_name_label,
         ]
         calc_name_labels = [
+            self.amount_01_calc_name_label,
+            self.amount_011_calc_name_label,
             self.amount_0b_calc_name_label,
             self.amount_profit_calc_name_label,
             self.amount_air_calc_name_label,
             self.amount_management_calc_name_label,
             self.amount_qc_calc_name_label,
             self.amount_art_calc_name_label,
+            self.amount_total_calc_name_label,
         ]
         value_labels = [
             self.amount_01_value_label,
@@ -502,6 +567,9 @@ class BudgetAnalyzerQT(QMainWindow):
             self.amount_art_summary_value_label,
             self.amount_art_combined_value_label,
             self.amount_total_value_label,
+            self.amount_01_calc_value_label,
+            self.amount_011_calc_value_label,
+            self.amount_total_calc_value_label,
         ]
 
         for label in name_labels:
@@ -518,10 +586,9 @@ class BudgetAnalyzerQT(QMainWindow):
 
         self.amount_panel.setMinimumHeight(220)
         for label in (
-            self.amount_01_value_label, self.amount_011_value_label, self.amount_total_value_label
-        ):
-            label.setMinimumWidth(180)
-        for label in (
+            self.amount_01_value_label, self.amount_01_calc_value_label,
+            self.amount_011_value_label, self.amount_011_calc_value_label,
+            self.amount_total_value_label, self.amount_total_calc_value_label,
             self.amount_0b_value_label, self.amount_0b_calc_value_label,
             self.amount_profit_value_label, self.amount_profit_calc_value_label,
             self.amount_air_value_label, self.amount_air_calc_value_label,
@@ -531,20 +598,17 @@ class BudgetAnalyzerQT(QMainWindow):
         ):
             label.setMinimumWidth(120)
 
-        # 一般金額列：左側項目名稱，右側金額。
-        amount_panel_layout.addWidget(self.amount_01_name_label, 0, 0)
-        amount_panel_layout.addWidget(self.amount_01_value_label, 0, 1, 1, 3)
-        amount_panel_layout.addWidget(self.amount_011_name_label, 1, 0)
-        amount_panel_layout.addWidget(self.amount_011_value_label, 1, 1, 1, 3)
-
-        # 雙欄列：左邊抓組合總表複價，右邊依 01 發包工程費複價試算。
+        # 雙欄列：左邊保留分析讀入原始複價，右邊顯示重新計算後結果。
         dual_rows = [
-            (2, self.amount_0b_name_label, self.amount_0b_value_label, self.amount_0b_calc_name_label, self.amount_0b_calc_value_label),
-            (3, self.amount_profit_name_label, self.amount_profit_value_label, self.amount_profit_calc_name_label, self.amount_profit_calc_value_label),
-            (4, self.amount_air_name_label, self.amount_air_value_label, self.amount_air_calc_name_label, self.amount_air_calc_value_label),
-            (5, self.amount_management_name_label, self.amount_management_value_label, self.amount_management_calc_name_label, self.amount_management_calc_value_label),
+            (0, self.amount_01_name_label, self.amount_01_value_label, self.amount_01_calc_name_label, self.amount_01_calc_value_label),
+            (1, self.amount_011_name_label, self.amount_011_value_label, self.amount_011_calc_name_label, self.amount_011_calc_value_label),
+            (2, self.amount_profit_name_label, self.amount_profit_value_label, self.amount_profit_calc_name_label, self.amount_profit_calc_value_label),
+            (3, self.amount_0b_name_label, self.amount_0b_value_label, self.amount_0b_calc_name_label, self.amount_0b_calc_value_label),
+            (4, self.amount_management_name_label, self.amount_management_value_label, self.amount_management_calc_name_label, self.amount_management_calc_value_label),
+            (5, self.amount_air_name_label, self.amount_air_value_label, self.amount_air_calc_name_label, self.amount_air_calc_value_label),
             (6, self.amount_qc_name_label, self.amount_qc_value_label, self.amount_qc_calc_name_label, self.amount_qc_calc_value_label),
             (7, self.amount_art_name_label, self.amount_art_summary_value_label, self.amount_art_calc_name_label, self.amount_art_combined_value_label),
+            (8, self.amount_total_name_label, self.amount_total_value_label, self.amount_total_calc_name_label, self.amount_total_calc_value_label),
         ]
 
         for row_no, title_label, actual_label, calc_label, calc_value_label in dual_rows:
@@ -553,19 +617,23 @@ class BudgetAnalyzerQT(QMainWindow):
             amount_panel_layout.addWidget(calc_label, row_no, 2)
             amount_panel_layout.addWidget(calc_value_label, row_no, 3)
 
-        amount_panel_layout.addWidget(self.amount_total_name_label, 8, 0)
-        amount_panel_layout.addWidget(self.amount_total_value_label, 8, 1, 1, 3)
-
         self.amount_total_name_label.setStyleSheet(
             name_style + "border-top: 1px solid #D6B656; padding-top: 3px;"
         )
         self.amount_total_value_label.setStyleSheet(
             value_style + "border-top: 1px solid #D6B656; padding-top: 3px;"
         )
+        self.amount_total_calc_name_label.setStyleSheet(
+            calc_name_style + "border-top: 1px solid #D6B656; padding-top: 3px;"
+        )
+        self.amount_total_calc_value_label.setStyleSheet(
+            value_style + "border-top: 1px solid #D6B656; padding-top: 3px;"
+        )
 
         top_layout.addWidget(self.amount_panel, stretch=0)
 
         self.tabs = QTabWidget()
+        main_layout.addSpacing(14)
         main_layout.addWidget(self.tabs, stretch=1)
 
         self.summary_table = self.create_table()
@@ -582,6 +650,11 @@ class BudgetAnalyzerQT(QMainWindow):
 
         self.status_label = QLabel("尚未分析")
         main_layout.addWidget(self.status_label)
+
+        self.slogan_label = QLabel("Imagination is more important than knowledge.")
+        self.slogan_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.slogan_label.setStyleSheet("color: #555555; font-size: 12px;")
+        main_layout.addWidget(self.slogan_label)
 
     def create_table(self):
         table = QTableWidget()
@@ -611,6 +684,10 @@ class BudgetAnalyzerQT(QMainWindow):
         for r, row in enumerate(data):
             for c, col in enumerate(COLUMNS):
                 value = "" if row.get(col, "") is None else str(row.get(col, ""))
+                if table is self.combined_table and col == "數量":
+                    number = self.num(value)
+                    if number is not None:
+                        value = self.fmt_3(number)
                 item = QTableWidgetItem(value)
 
                 if col in LEFT_COLUMNS:
@@ -868,6 +945,61 @@ class BudgetAnalyzerQT(QMainWindow):
 
         return total + remaining * 0.005
 
+    def dynamic_amount_values(self):
+        amounts = {
+            code: self.num(self.get_combined_amount_by_item(code)) or 0.0
+            for code in ("0", "01", "011", "0B", "012", "0A1", "0A2", "0A3", "02", "03", "04", "05", "06", "0A")
+        }
+        amount_0a3_summary = self.num(self.get_summary_amount_by_item("0A3")) or 0.0
+        base_01 = amounts["01"]
+        management_base = amounts["011"] + sum(amounts[code] for code in ("02", "03", "04", "05"))
+        management_fee = self.calculate_management_fee(management_base)
+
+        return {
+            "amounts": amounts,
+            "amount_0a3_summary": amount_0a3_summary,
+            "base_01": base_01,
+            "management_fee": management_fee,
+            "calculated": {
+                "012": base_01 * 0.10,
+                "0A1": base_01 * 0.005,
+                "0A2": base_01 * 0.001,
+                "0A3": base_01 * 0.01,
+                "06": management_fee,
+            },
+        }
+
+    def display_amount_snapshot(self, calculated_side=False):
+        values = self.dynamic_amount_values()
+        amounts = values["amounts"]
+        calculated = values["calculated"]
+        current_total = amounts.get("0", 0.0) or sum(amounts[code] for code in ("01", "02", "03", "04", "05", "06", "0A"))
+
+        if calculated_side:
+            return {
+                "01": amounts["01"],
+                "011": amounts["011"],
+                "012": calculated["012"],
+                "0B": values["base_01"] * 0.05,
+                "06": calculated["06"],
+                "0A1": calculated["0A1"],
+                "0A2": calculated["0A2"],
+                "0A3": calculated["0A3"],
+                "total": current_total,
+            }
+
+        return {
+            "01": amounts["01"],
+            "011": amounts["011"],
+            "012": amounts["012"],
+            "0B": amounts["0B"],
+            "06": amounts["06"],
+            "0A1": amounts["0A1"],
+            "0A2": amounts["0A2"],
+            "0A3": values["amount_0a3_summary"],
+            "total": current_total,
+        }
+
     def get_combined_amount_by_name(self, item_name):
         """
         依組合總表「項目名稱」抓複價。
@@ -894,7 +1026,9 @@ class BudgetAnalyzerQT(QMainWindow):
         """
         required_labels = (
             "amount_01_value_label",
+            "amount_01_calc_value_label",
             "amount_011_value_label",
+            "amount_011_calc_value_label",
             "amount_0b_value_label",
             "amount_0b_calc_value_label",
             "amount_profit_value_label",
@@ -908,41 +1042,38 @@ class BudgetAnalyzerQT(QMainWindow):
             "amount_art_summary_value_label",
             "amount_art_combined_value_label",
             "amount_total_value_label",
+            "amount_total_calc_value_label",
         )
 
         if not all(hasattr(self, name) for name in required_labels):
             return
 
-        amounts = {
-            code: self.num(self.get_combined_amount_by_item(code)) or 0.0
-            for code in ("01", "011", "0B", "012", "0A1", "0A2", "0A3", "02", "03", "04", "05", "06", "0A")
-        }
-        amount_0a3_summary = self.num(self.get_summary_amount_by_item("0A3")) or 0.0
-        base_01 = amounts["01"]
-        management_base = amounts["011"] + sum(amounts[code] for code in ("02", "03", "04", "05"))
-        management_fee = round(self.calculate_management_fee(management_base))
+        original_values = self.original_amounts or self.display_amount_snapshot(calculated_side=False)
+        recalculated_values = self.recalculated_amounts
 
         label_values = (
-            (self.amount_01_value_label, amounts["01"]),
-            (self.amount_011_value_label, amounts["011"]),
-            (self.amount_0b_value_label, amounts["0B"]),
-            (self.amount_0b_calc_value_label, base_01 * 0.05),
-            (self.amount_profit_value_label, amounts["012"]),
-            (self.amount_profit_calc_value_label, base_01 * 0.10),
-            (self.amount_air_value_label, amounts["0A1"]),
-            (self.amount_air_calc_value_label, base_01 * 0.005),
-            (self.amount_management_value_label, amounts["06"]),
-            (self.amount_qc_value_label, amounts["0A2"]),
-            (self.amount_qc_calc_value_label, base_01 * 0.001),
-            (self.amount_art_summary_value_label, amount_0a3_summary),
-            (self.amount_art_combined_value_label, base_01 * 0.01),
-            (self.amount_total_value_label, sum(amounts[code] for code in ("01", "02", "03", "04", "05", "06", "0A"))),
+            (self.amount_01_value_label, original_values.get("01", 0.0)),
+            (self.amount_01_calc_value_label, recalculated_values.get("01", 0.0)),
+            (self.amount_011_value_label, original_values.get("011", 0.0)),
+            (self.amount_011_calc_value_label, recalculated_values.get("011", 0.0)),
+            (self.amount_profit_value_label, original_values.get("012", 0.0)),
+            (self.amount_profit_calc_value_label, recalculated_values.get("012", 0.0)),
+            (self.amount_0b_value_label, original_values.get("0B", 0.0)),
+            (self.amount_0b_calc_value_label, recalculated_values.get("0B", 0.0)),
+            (self.amount_management_value_label, original_values.get("06", 0.0)),
+            (self.amount_management_calc_value_label, recalculated_values.get("06", 0.0)),
+            (self.amount_air_value_label, original_values.get("0A1", 0.0)),
+            (self.amount_air_calc_value_label, recalculated_values.get("0A1", 0.0)),
+            (self.amount_qc_value_label, original_values.get("0A2", 0.0)),
+            (self.amount_qc_calc_value_label, recalculated_values.get("0A2", 0.0)),
+            (self.amount_art_summary_value_label, original_values.get("0A3", 0.0)),
+            (self.amount_art_combined_value_label, recalculated_values.get("0A3", 0.0)),
+            (self.amount_total_value_label, original_values.get("total", 0.0)),
+            (self.amount_total_calc_value_label, recalculated_values.get("total", 0.0)),
         )
 
         for label, value in label_values:
             label.setText(f"{value:,.3f}")
-
-        self.amount_management_calc_value_label.setText(f"{management_fee:,.0f}")
 
     def table_object_by_name(self, name):
         for table_name, _, table in self.table_configs():
@@ -1083,7 +1214,7 @@ class BudgetAnalyzerQT(QMainWindow):
 
 
     # =========================================================
-    # V4.2.3 儲存 / 載入 / 編輯歷史
+    # V4.2.7 儲存 / 載入 / 編輯歷史
     # =========================================================
     def log_path_for_current_file(self):
         """
@@ -1135,6 +1266,8 @@ class BudgetAnalyzerQT(QMainWindow):
             "unit_price_data": copy.deepcopy(self.unit_price_data),
             "combined_data": copy.deepcopy(self.combined_data),
             "final_data": copy.deepcopy(self.final_data),
+            "original_amounts": copy.deepcopy(self.original_amounts),
+            "recalculated_amounts": copy.deepcopy(self.recalculated_amounts),
             "color_marks": self.serialize_marks(self.color_marks),
             "edited_cell_marks": self.serialize_marks(self.edited_cell_marks),
         }
@@ -1156,6 +1289,8 @@ class BudgetAnalyzerQT(QMainWindow):
             self.unit_price_data = copy.deepcopy(state.get("unit_price_data", []))
             self.combined_data = copy.deepcopy(state.get("combined_data", []))
             self.final_data = copy.deepcopy(state.get("final_data", []))
+            self.original_amounts = copy.deepcopy(state.get("original_amounts", {}))
+            self.recalculated_amounts = copy.deepcopy(state.get("recalculated_amounts", {}))
             self.color_marks = self.deserialize_marks(state.get("color_marks", []))
             self.edited_cell_marks = self.deserialize_marks(state.get("edited_cell_marks", []))
 
@@ -1185,6 +1320,7 @@ class BudgetAnalyzerQT(QMainWindow):
 
     def push_edit_history(self):
         self.edit_history.append(self.make_history_snapshot())
+        self.redo_history = []
 
         if len(self.edit_history) > self.max_history:
             self.edit_history = self.edit_history[-self.max_history:]
@@ -1199,6 +1335,7 @@ class BudgetAnalyzerQT(QMainWindow):
                 "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "state": state,
                 "history": self.edit_history[-self.max_history:],
+                "redo_history": self.redo_history[-self.max_history:],
             }
 
             log_path.write_text(
@@ -1225,6 +1362,7 @@ class BudgetAnalyzerQT(QMainWindow):
         payload = json.loads(Path(log_path).read_text(encoding="utf-8"))
         state = payload.get("state", payload)
         self.edit_history = payload.get("history", [])[-self.max_history:]
+        self.redo_history = payload.get("redo_history", [])[-self.max_history:]
         self.apply_state(state)
 
     def load_edit_log_manual(self):
@@ -1272,9 +1410,32 @@ class BudgetAnalyzerQT(QMainWindow):
 
         try:
             state = self.edit_history.pop()
+            self.redo_history.append(self.make_history_snapshot())
+
+            if len(self.redo_history) > self.max_history:
+                self.redo_history = self.redo_history[-self.max_history:]
+
             self.apply_state(state)
             self.save_edit_log(show_message=False)
             self.msg_info("完成", f"已回復上一次編輯。\n剩餘可回復次數：{len(self.edit_history)}")
+        except Exception:
+            self.msg_error("錯誤", traceback.format_exc())
+
+    def redo_last_edit(self):
+        if not self.redo_history:
+            self.msg_warn("提醒", "目前沒有可往後回復的編輯歷史。")
+            return
+
+        try:
+            state = self.redo_history.pop()
+            self.edit_history.append(self.make_history_snapshot())
+
+            if len(self.edit_history) > self.max_history:
+                self.edit_history = self.edit_history[-self.max_history:]
+
+            self.apply_state(state)
+            self.save_edit_log(show_message=False)
+            self.msg_info("完成", f"已往後回復一次。\n剩餘可往後回復次數：{len(self.redo_history)}")
         except Exception:
             self.msg_error("錯誤", traceback.format_exc())
 
@@ -1296,6 +1457,25 @@ class BudgetAnalyzerQT(QMainWindow):
             self.file_edit.setCursorPosition(len(path))
             self.ask_load_existing_log()
 
+    def clear_loaded_data(self):
+        self.data.clear()
+        self.detail_data.clear()
+        self.unit_price_data.clear()
+        self.combined_data.clear()
+        self.final_data.clear()
+        self.original_amounts = {}
+        self.recalculated_amounts = {}
+        self.color_marks.clear()
+        self.edited_cell_marks.clear()
+        self.edit_history = []
+        self.redo_history = []
+
+        for table in self.all_tables():
+            table.setRowCount(0)
+
+        self.update_dynamic_amount_labels()
+        self.status_label.setText("已清除既有資料")
+
     def analyze(self):
         try:
             filename = self.file_edit.text().strip()
@@ -1304,12 +1484,28 @@ class BudgetAnalyzerQT(QMainWindow):
                 self.msg_warn("提醒", "請先選擇 Excel 檔案")
                 return
 
+            if any((self.data, self.detail_data, self.unit_price_data, self.combined_data, self.final_data)):
+                reply = QMessageBox.question(
+                    self,
+                    "確認重新分析",
+                    "下半部目前已有資料。\n是否全部清除並重新載入資料？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+
+                self.clear_loaded_data()
+
             engine = self.engine_for(filename)
 
             self.parse_summary(filename, engine)
             self.parse_detail(filename, engine)
             warnings = self.parse_unit_price(filename, engine)
             self.build_combined_data()
+            self.original_amounts = self.display_amount_snapshot(calculated_side=False)
+            self.recalculated_amounts = {}
 
             self.populate_table(self.summary_table, self.data)
             self.populate_table(self.detail_table, self.detail_data)
@@ -1325,6 +1521,7 @@ class BudgetAnalyzerQT(QMainWindow):
             )
 
             self.edit_history = []
+            self.redo_history = []
             self.save_edit_log(show_message=False)
 
             if warnings:
@@ -1695,6 +1892,32 @@ class BudgetAnalyzerQT(QMainWindow):
             if f"{parent}{code}" in item_to_row
         ]
 
+    def sync_dynamic_calculations_to_combined(self, item_to_row):
+        values = self.dynamic_amount_values()
+        changed_cells = []
+        changed = 0
+
+        for item_code, unit_price in values["calculated"].items():
+            row = item_to_row.get(item_code)
+
+            if row is None:
+                continue
+
+            row["單價"] = self.fmt_3(unit_price)
+            changed_cells.append((item_code, "單價"))
+
+            qty = self.num(row.get("數量", ""))
+            if qty is not None:
+                row["數量"] = self.fmt_3(qty)
+                row["複價"] = self.fmt_3(unit_price * qty)
+            else:
+                row["複價"] = ""
+
+            changed_cells.append((item_code, "複價"))
+            changed += 1
+
+        return changed, changed_cells
+
     def is_leaf(self, item, all_items):
         return not any(
             other != item and other.startswith(item) and len(other) > len(item)
@@ -1748,6 +1971,7 @@ class BudgetAnalyzerQT(QMainWindow):
 
         leaf_changed = 0
         rollup_changed = 0
+        dynamic_changed = 0
         skipped = 0
         changed_cells = []
 
@@ -1795,6 +2019,29 @@ class BudgetAnalyzerQT(QMainWindow):
             changed_cells.append((item, "複價"))
             rollup_changed += 1
 
+        dynamic_changed, dynamic_cells = self.sync_dynamic_calculations_to_combined(item_to_row)
+        changed_cells.extend(dynamic_cells)
+
+        row_0a = item_to_row.get("0A")
+        if row_0a is not None:
+            children_0a = self.rollup_children("0A", item_to_row)
+            total_0a = 0.0
+            found_0a = False
+
+            for child in children_0a:
+                amount = self.num(item_to_row[child].get("複價", ""))
+
+                if amount is not None:
+                    total_0a += amount
+                    found_0a = True
+
+            if found_0a:
+                row_0a["單價"] = self.fmt_3(total_0a)
+                qty_0a = self.num(row_0a.get("數量", ""))
+                row_0a["複價"] = self.fmt_3(total_0a * qty_0a) if qty_0a is not None else self.fmt_3(total_0a)
+                changed_cells.append(("0A", "單價"))
+                changed_cells.append(("0A", "複價"))
+
         total_row = item_to_row.get("0")
         if total_row is not None:
             second_level_total = 0.0
@@ -1815,6 +2062,7 @@ class BudgetAnalyzerQT(QMainWindow):
                 changed_cells.append(("0", "單價"))
                 changed_cells.append(("0", "複價"))
 
+        self.recalculated_amounts = self.display_amount_snapshot(calculated_side=True)
         self.refresh_combined_and_final(self.combined_data)
         self.mark_calc2_blue(changed_cells)
 
@@ -1823,6 +2071,7 @@ class BudgetAnalyzerQT(QMainWindow):
             f"重新計算完成\n"
             f"末階計算：{leaf_changed} 筆\n"
             f"階層彙總：{rollup_changed} 筆\n"
+            f"右上試算寫回：{dynamic_changed} 筆\n"
             f"略過：{skipped} 筆"
         )
 
@@ -2117,66 +2366,6 @@ class BudgetAnalyzerQT(QMainWindow):
     def default_export_filename(self, extension):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         return str(Path.cwd() / f"AA3118_{timestamp}.{extension}")
-
-    def export_final_xls(self):
-        rows = self.get_final_export_rows()
-
-        if not rows:
-            self.msg_warn("提醒", "輸出總表沒有資料可匯出。")
-            return
-
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "匯出 XLS", self.default_export_filename("xls"), "Excel 97-2003 (*.xls)"
-        )
-
-        if not filename:
-            return
-
-        if not filename.lower().endswith(".xls"):
-            filename += ".xls"
-
-        try:
-            def html_escape(value):
-                value = "" if value is None else str(value)
-                return (
-                    value.replace("&", "&amp;")
-                         .replace("<", "&lt;")
-                         .replace(">", "&gt;")
-                         .replace('"', "&quot;")
-                )
-
-            output = []
-            output.append('<html lang="zh-Hant-TW">')
-            output.append('<head>')
-            output.append('<meta charset="utf-8">')
-            output.append('<meta http-equiv="Content-Type" content="text/html; charset=utf-8">')
-            output.append('<meta name="ProgId" content="Excel.Sheet">')
-            output.append('<style>')
-            output.append('td, th { mso-number-format:"\\@"; white-space:nowrap; }')
-            output.append('</style>')
-            output.append('</head>')
-            output.append('<body>')
-            output.append('<table border="1">')
-            output.append('<tr>')
-
-            for col in COLUMNS:
-                output.append(f'<th style="mso-number-format:\\@">{html_escape(col)}</th>')
-
-            output.append('</tr>')
-
-            for row in rows:
-                output.append('<tr>')
-                for col in COLUMNS:
-                    output.append(f'<td style="mso-number-format:\\@">{html_escape(row.get(col, ""))}</td>')
-                output.append('</tr>')
-
-            output.append('</table></body></html>')
-
-            Path(filename).write_text("\n".join(output), encoding="utf-8-sig")
-            self.msg_info("完成", f"XLS 匯出完成：\n{filename}")
-
-        except Exception:
-            self.msg_error("錯誤", traceback.format_exc())
 
     def export_final_xlsm(self):
         rows = self.get_final_export_rows()

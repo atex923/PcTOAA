@@ -1,0 +1,31 @@
+{
+  "project": "PsTOAA",
+  "version": "V4.4",
+  "created_at": "2026-06-06",
+  "files": [
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "PsTOAA_V4_4.pyw",
+    "README.md",
+    "archive/PsTOAA_V4_2.py",
+    "archive/PsTOAA_V4_2_a.pyw",
+    "archive/PsTOAA_V4_3_1.pyw",
+    "archive/PsTOAA_V4_3_1_xlsx.pyw",
+    "archive/PsTOAA_V4_3_2.pyw",
+    "archive/PsTOAA_V4_3_3.pyw",
+    "archive/PsTOAA_V4_3_3_click_fix.pyw",
+    "archive/PsTOAA_V4_3_3_click_fix2.pyw",
+    "archive/PsTOAA_V4_3_3_shift_del.pyw",
+    "archive/PsTOAA_V4_3_3_toggle_top.pyw",
+    "archive/PsTOAA_V4_3_4.pyw",
+    "archive/PsTOAA_V4_3_b.pyw",
+    "archive/PsTOAA_V4_3_b_fast.pyw",
+    "archive/PsTOAA_V4_3_b_fast_fix.pyw",
+    "archive/PsTOAA_V4_3_b_fast_fix_round4.pyw",
+    "docs/功能規格.md",
+    "docs/版本歷史.md",
+    "docs/系統架構.md",
+    "requirements.txt",
+    "sample/README.md"
+  ]
+}

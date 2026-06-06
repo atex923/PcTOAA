@@ -4,7 +4,8 @@
 
 ## 目前正式版
 
-- `PsTOAA_V4_2_7.py`
+- `PsTOAA_V4_5_2.py`
+- `PsTOAA_V4_5_2.pyw`
 
 ## 歷程
 
