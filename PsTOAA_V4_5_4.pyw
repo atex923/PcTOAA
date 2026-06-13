@@ -8,7 +8,7 @@ APP_DIR = Path(__file__).resolve().parent
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
-from PsTOAA_V4_5_2 import main
+from PsTOAA_V4_5_4 import main
 
 
 if __name__ == "__main__":
