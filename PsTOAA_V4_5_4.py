@@ -367,7 +367,12 @@ class BudgetAnalyzerQT(QMainWindow):
         return self.fmt(value) == ""
 
     def engine_for(self, filename):
-        return "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
+        if filename.lower().endswith(".xls"):
+            ensure_package("xlrd", "xlrd")
+            return "xlrd"
+
+        ensure_package("openpyxl", "openpyxl")
+        return "openpyxl"
 
     def record(self, item="", name="", unit="", qty="", unit_price="", amount="", remark="", price3=False, qty3=False):
         return {
