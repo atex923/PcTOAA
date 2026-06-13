@@ -1,5 +1,5 @@
-# PsTOAA_V4_5_6.pyw
-# KOHAKU預算書轉換容器 V4.5.6
+# PsTOAA_V4_5_7.pyw
+# KOHAKU預算書轉換容器 V4.5.7
 #
 # 支援 PySide6 / PyQt6。
 #
@@ -33,7 +33,14 @@
 # - V4.4.6：刪除行移到左側組合總表區，並讓功能執行後保留隱藏階層狀態。
 # - V4.5.0：支援拖曳檔案到視窗開啟，調整勾選文字，中文匯出檔名加入版號與 TAISHOSANKE。
 # - V4.5.1：修正備註整理藍字重繪、刪除行不跳完成視窗，項目 0 加總所有第二階層工項。
-# - V4.5.6：建立第三碼進版規則，並讓 .pyw 與 .py 保持完整同步碼。
+# - V4.5.7: Add rule to consolidate major/minor release highlights in the program description.
+
+#
+# Version note rule:
+# - Patch release: add one focused note for the changed behavior.
+# - Major or minor release: consolidate the program description section with
+#   the key points of that major/minor version line, for example V5.x or V4.6.x.
+# - Keep README and this header aligned when releasing.
 
 import sys
 import re
@@ -147,9 +154,9 @@ except Exception:
 
 
 CODES = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-APP_VERSION = "V4.5.6"
+APP_VERSION = "V4.5.7"
 APP_TITLE = f"KOHAKU預算書轉換容器{APP_VERSION}"
-DEFAULT_LOG_FILENAME = "BudgetAnalyzer_V4_5_6.budget_log.json"
+DEFAULT_LOG_FILENAME = "BudgetAnalyzer_V4_5_7.budget_log.json"
 RIGHT_TOP_0A_CODES = ("0A1", "0A2", "0A3", "0A4", "0A5", "0A6", "0A7", "0A8", "0A9", "0AA")
 
 COLUMNS = (

@@ -4,12 +4,12 @@ KOHAKU 預算書轉換容器。
 
 ## 目前正式版
 
-- `PsTOAA_V4_5_6.py`
-- `PsTOAA_V4_5_6.pyw`
+- `PsTOAA_V4_5_7.py`
+- `PsTOAA_V4_5_7.pyw`
 
-目前正式版：V4.5.6
+目前正式版：V4.5.7
 
-視窗標題：`KOHAKU預算書轉換容器V4.5.6`
+視窗標題：`KOHAKU預算書轉換容器V4.5.7`
 
 匯出預設檔名：`AA3118_工程編號_YYYYMMDDHHMMSS`
 
@@ -18,13 +18,13 @@ KOHAKU 預算書轉換容器。
 命令列執行：
 
 ```bash
-python3 PsTOAA_V4_5_6.py
+python3 PsTOAA_V4_5_7.py
 ```
 
 Windows 可使用 `.pyw` 啟動無 console 視窗版：
 
 ```bash
-python3 PsTOAA_V4_5_6.pyw
+python3 PsTOAA_V4_5_7.pyw
 ```
 
 ## Nuitka 打包
@@ -45,13 +45,17 @@ python -m nuitka `
   --noinclude-pytest-mode=nofollow `
   --noinclude-unittest-mode=nofollow `
   --windows-icon-from-ico="C:\Users\newat\Downloads\icon_result (2).ico" `
-  --output-filename=PsTOAA_V4_5_6.exe `
-  PsTOAA_V4_5_6.pyw
+  --output-filename=PsTOAA_V4_5_7.exe `
+  PsTOAA_V4_5_7.pyw
 ```
 
 ## 版本進版規則
 
-每次修改程式都必須進版第三碼，例如 `V4.5.6` 的下一次修改為 `V4.5.7`。
+每次修改程式都必須進版第三碼，例如 `V4.5.7` 的下一次修改為 `V4.5.8`。
+
+第一碼或第二碼進版時，例如 `V4.x -> V5.x` 或 `V4.5.x -> V4.6.x`，必須在程式說明區整合該碼號改版重點，避免只留下零散第三碼紀錄。
+
+第三碼進版時，只需新增該次修正重點。
 
 根目錄只保留目前正式版的 `.py` 與 `.pyw`。
 
