@@ -1,5 +1,5 @@
-﻿# PsTOAA_V4_5_5.py
-# KOHAKU預算書轉換容器 V4.5.5
+# PsTOAA_V4_5_6.py
+# KOHAKU預算書轉換容器 V4.5.6
 #
 # 支援 PySide6 / PyQt6。
 #
@@ -33,7 +33,7 @@
 # - V4.4.6：刪除行移到左側組合總表區，並讓功能執行後保留隱藏階層狀態。
 # - V4.5.0：支援拖曳檔案到視窗開啟，調整勾選文字，中文匯出檔名加入版號與 TAISHOSANKE。
 # - V4.5.1：修正備註整理藍字重繪、刪除行不跳完成視窗，項目 0 加總所有第二階層工項。
-# - V4.5.5：建立第三碼進版規則，並讓 .pyw 與 .py 保持完整同步碼。
+# - V4.5.6：建立第三碼進版規則，並讓 .pyw 與 .py 保持完整同步碼。
 
 import sys
 import re
@@ -65,14 +65,25 @@ if sys.stderr is None:
 # =========================================================
 def ensure_package(import_name, pip_name=None):
     """
-    嘗試匯入套件；若缺少，使用目前 Python 執行環境自動 pip install。
+    Import a dependency when running from source.
+
+    In a Nuitka-built executable, dependencies must be bundled at build time.
+    Falling back to pip install from a frozen app can call the executable
+    itself as python -m pip and produce confusing errors, so frozen builds
+    fail fast with a clear message instead.
     """
     pip_name = pip_name or import_name
 
     try:
         return importlib.import_module(import_name)
-    except ImportError:
-        print(f"[套件缺少] {import_name}，開始安裝：{pip_name}")
+    except ImportError as import_error:
+        if getattr(sys, "frozen", False):
+            raise ImportError(
+                f"Missing bundled dependency in executable: {import_name}. "
+                f"Rebuild with Nuitka include option for {pip_name}."
+            ) from import_error
+
+        print(f"[missing package] {import_name}; installing {pip_name}")
 
         try:
             subprocess.check_call([
@@ -83,11 +94,10 @@ def ensure_package(import_name, pip_name=None):
                 pip_name
             ])
         except Exception as install_error:
-            print(f"[安裝失敗] {pip_name}")
+            print(f"[install failed] {pip_name}")
             raise install_error
 
         return importlib.import_module(import_name)
-
 
 # Excel / 資料套件採延遲載入：
 # 啟動視窗時先不載入 pandas / openpyxl / xlrd，可明顯縮短啟動時間並降低初始記憶體。
@@ -137,9 +147,9 @@ except Exception:
 
 
 CODES = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-APP_VERSION = "V4.5.5"
+APP_VERSION = "V4.5.6"
 APP_TITLE = f"KOHAKU預算書轉換容器{APP_VERSION}"
-DEFAULT_LOG_FILENAME = "BudgetAnalyzer_V4_5_5.budget_log.json"
+DEFAULT_LOG_FILENAME = "BudgetAnalyzer_V4_5_6.budget_log.json"
 RIGHT_TOP_0A_CODES = ("0A1", "0A2", "0A3", "0A4", "0A5", "0A6", "0A7", "0A8", "0A9", "0AA")
 
 COLUMNS = (
@@ -3325,4 +3335,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
