@@ -2930,7 +2930,11 @@ class BudgetAnalyzerQT(QMainWindow):
             item_len = len(item)
             is_unit_layer = item in unit_items
 
-            if item.startswith("011"):
+            if item == "0":
+                row["單價"] = ""
+                row["複價"] = ""
+
+            elif item.startswith("011"):
                 if 2 <= item_len <= 5:
                     delete_price_allowed(row, item)
                     row["複價"] = ""
