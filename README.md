@@ -32,3 +32,9 @@ python3 PsTOAA_V4_5_4.pyw
 舊版程式檔保留於 `history/versions/`。
 
 版本整理紀錄請參考 `history/README.md`。
+
+## 版本進版規則
+
+推送新版號前，根目錄只保留目前正式版的 `.py` 與 `.pyw`。
+
+舊版 `.py` 與 `.pyw` 必須移到 `history/versions/`，避免 A 電腦與 B 電腦同步時誤用舊版或互相覆蓋。
